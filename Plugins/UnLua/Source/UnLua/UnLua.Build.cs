@@ -27,11 +27,15 @@ public class UnLua : ModuleRules
             new string[] {
             }
             );
-                
-        
+
+
         PrivateIncludePaths.AddRange(
             new string[] {
                 "UnLua/Private",
+
+// ADD_LuaPanda
+                "LibLuasocket",
+                "LuaPanda",
             }
             );
 
@@ -53,10 +57,14 @@ public class UnLua : ModuleRules
                 "InputCore",
                 "Projects",
                 "Lua",
+
+// ADD_LuaPanda
+                "LibLuasocket",
+                "LuaPanda",
             }
             );
-        
-        
+
+
         if (Target.bBuildEditor == true)
         {
             PrivateDependencyModuleNames.Add("UnrealEd");
