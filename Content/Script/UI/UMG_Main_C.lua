@@ -1,4 +1,5 @@
 require "UnLua"
+require("LuaPanda").start("127.0.0.1",8818)
 
 local UMG_Main_C = Class()
 
