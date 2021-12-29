@@ -22,7 +22,7 @@ namespace UnLua
     template <typename T>
     struct TTypeIntelliSense
     {
-        static FString GetName() { return ANSI_TO_TCHAR(TType<T>::GetName()); }
+        static FString GetName() { return UTF8_TO_TCHAR(TType<T>::GetName()); }
     };
 
     template <typename T> struct TTypeIntelliSense<T*> { static FString GetName() { return TTypeIntelliSense<T>::GetName(); } };
@@ -360,7 +360,7 @@ namespace UnLua
     template <typename ClassType, typename... ArgType>
     template <uint32... N> void TConstructor<ClassType, ArgType...>::Construct(lua_State *L, TTuple<typename TArgTypeTraits<ArgType>::Type...> &Args, TIndices<N...>)
     {
-        void *Userdata = UnLua::NewUserdata(L, sizeof(ClassType), TCHAR_TO_ANSI(*ClassName), alignof(ClassType));
+        void *Userdata = UnLua::NewUserdata(L, sizeof(ClassType), TCHAR_TO_UTF8(*ClassName), alignof(ClassType));
         if (Userdata)
         {
             new(Userdata) ClassType(Args.template Get<N>()...);
@@ -380,7 +380,7 @@ namespace UnLua
     void TSmartPtrConstructor<SmartPtrType, ClassType, ArgType...>::Register(lua_State *L)
     {
         // make sure the meta table is on the top of the stack
-        lua_pushstring(L, TCHAR_TO_ANSI(*FuncName));
+        lua_pushstring(L, TCHAR_TO_UTF8(*FuncName));
         lua_pushlightuserdata(L, this);
         lua_pushcclosure(L, InvokeFunction, 1);
         lua_rawset(L, -3);
@@ -498,7 +498,7 @@ namespace UnLua
     {
         lua_pushlightuserdata(L, this);
         lua_pushcclosure(L, InvokeFunction, 1);
-        lua_setglobal(L, TCHAR_TO_ANSI(*Name));
+        lua_setglobal(L, TCHAR_TO_UTF8(*Name));
     }
 
     template <typename RetType, typename... ArgType>
@@ -549,7 +549,7 @@ namespace UnLua
     void TExportedMemberFunction<ClassType, RetType, ArgType...>::Register(lua_State *L)
     {
         // make sure the meta table is on the top of the stack
-        lua_pushstring(L, TCHAR_TO_ANSI(*Name));
+        lua_pushstring(L, TCHAR_TO_UTF8(*Name));
         lua_pushlightuserdata(L, this);
         lua_pushcclosure(L, InvokeFunction, 1);
         lua_rawset(L, -3);
@@ -565,6 +565,11 @@ namespace UnLua
             return 0;
         }
         TTuple<ClassType*, typename TArgTypeTraits<ArgType>::Type...> Args = GetArgs<ClassType*, typename TArgTypeTraits<ArgType>::Type...>(L, typename TOneBasedIndices<N>::Type());
+        if (Args.template Get<0>() == nullptr)
+        {
+            UE_LOG(LogUnLua, Error, TEXT("!!! Func(%s) this == nullptr!"), *Name);
+            return 0;
+        }
         return TInvokingHelper<RetType>::Invoke(L, Func, Args, typename TOneBasedIndices<sizeof...(ArgType)>::Type());
     }
 
@@ -598,7 +603,7 @@ namespace UnLua
     void TExportedStaticMemberFunction<RetType, ArgType...>::Register(lua_State *L)
     {
         // make sure the meta table is on the top of the stack
-        lua_pushstring(L, TCHAR_TO_ANSI(*Super::Name));
+        lua_pushstring(L, TCHAR_TO_UTF8(*Super::Name));
         lua_pushlightuserdata(L, this);
         lua_pushcclosure(L, InvokeFunction, 1);
         lua_rawset(L, -3);
@@ -649,6 +654,35 @@ namespace UnLua
     }
 #endif
 
+    /**
+     * Exported static property
+     */
+    template <typename T>
+    TExportedStaticProperty<T>::TExportedStaticProperty(const FString &InName, T* Value)
+        : FExportedProperty(InName, 0), Value(Value)
+    {}
+
+#if WITH_EDITOR
+    template <typename T>
+    void TExportedStaticProperty<T>::GenerateIntelliSense(FString &Buffer) const
+    {
+        FString TypeName = TTypeIntelliSense<typename TDecay<T>::Type>::GetName();
+        Buffer += FString::Printf(TEXT("---@field %s %s %s \r\n"), TEXT("public"), *Name, *TypeName);
+    }
+#endif
+
+    template <typename T>
+    void TExportedStaticProperty<T>::Read(lua_State *L, const void *ContainerPtr, bool bCreateCopy) const
+    {
+        
+    }
+
+    template <typename T>
+    void TExportedStaticProperty<T>::Write(lua_State *L, void *ContainerPtr, int32 IndexInStack) const
+    {
+        
+    }
+    
     template <typename T>
     TExportedArrayProperty<T>::TExportedArrayProperty(const FString &InName, uint32 InOffset, int32 InArrayDim)
         : FExportedProperty(InName, InOffset), ArrayDim(InArrayDim)
@@ -786,7 +820,7 @@ namespace UnLua
                 if (SuperClassName != NAME_None)
                 {
                     lua_pushstring(L, "Super");
-                    Type = luaL_getmetatable(L, TCHAR_TO_ANSI(*SuperClassName.ToString()));
+                    Type = luaL_getmetatable(L, TCHAR_TO_UTF8(*SuperClassName.ToString()));
                     check(Type == LUA_TTABLE);
                     lua_rawset(L, -3);
                 }
@@ -830,7 +864,7 @@ namespace UnLua
         if (!bIsReflected)
         {
 #if WITH_UE4_NAMESPACE
-            lua_getglobal(L, "UE4");
+            lua_getglobal(L, "UE");
             lua_pushstring(L, ClassName.Get());
             lua_pushvalue(L, -3);
             lua_rawset(L, -3);
@@ -848,7 +882,7 @@ namespace UnLua
         {
             while (InLib->name && InLib->func)
             {
-                GlueFunctions.Add(new FGlueFunction(ANSI_TO_TCHAR(InLib->name), InLib->func));
+                GlueFunctions.Add(new FGlueFunction(UTF8_TO_TCHAR(InLib->name), InLib->func));
                 ++InLib;
             }
         }
@@ -957,6 +991,12 @@ namespace UnLua
         FExportedClassBase::Properties.Add(new TExportedArrayProperty<T>(InName, PropertyOffset.Offset, N));
     }
 
+    template <bool bIsReflected, typename ClassType, typename... CtorArgType>
+    template <typename T> void TExportedClass<bIsReflected, ClassType, CtorArgType...>::AddStaticProperty(const FString &InName, T *Property)
+    {
+        FExportedClassBase::Properties.Add(new TExportedStaticProperty<T>(InName, Property));
+    }
+    
     template <bool bIsReflected, typename ClassType, typename... CtorArgType>
     template <typename RetType, typename... ArgType> void TExportedClass<bIsReflected, ClassType, CtorArgType...>::AddFunction(const FString &InName, RetType(ClassType::*InFunc)(ArgType...))
     {
