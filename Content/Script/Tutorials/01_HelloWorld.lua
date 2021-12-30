@@ -7,6 +7,8 @@
 
 require "UnLua"
 
+require("LuaPanda").start("127.0.0.1",8818)
+
 local Screen = require "Tutorials.Screen"
 
 local M = Class()
